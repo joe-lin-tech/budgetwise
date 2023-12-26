@@ -10,31 +10,17 @@ import wandb
 import numpy as np
 from params import *
 
-warnings.simplefilter(action='ignore', category=FutureWarning)
-
-torch.manual_seed(SEED)
-torch.cuda.manual_seed(SEED)
-np.random.seed(SEED)
-
-
-wandb.init(project="budgetwise")
-
-tokenizer = AutoTokenizer.from_pretrained(PRETRAINED_MODEL)
-
-train_iter = TableDataset(DATA_FILE, USERS_FILE, tokenizer)
-train_dataloader = DataLoader(train_iter, batch_size=BATCH_SIZE, shuffle=True)
-
-val_iter = TableDataset(DATA_FILE, USERS_FILE, tokenizer, mode='val')
-val_dataloader = DataLoader(val_iter, batch_size=BATCH_SIZE)
-
-config = TapasConfig(num_aggregation_labels=4, answer_loss_cutoff=1e5)
-model = TapasForQuestionAnswering.from_pretrained(PRETRAINED_MODEL, config=config)
-model.to(DEVICE)
-wandb.watch(model, log_freq=LOG_FREQUENCY)
-
-optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
-
 def train_epoch(train_dataloader: DataLoader, model: nn.Module, optimizer: Optimizer):
+    """Trains one epoch with a given training set, PyTorch model, and optimizer.
+
+    Args:
+        train_dataloader (DataLoader): PyTorch dataloader with training data
+        model (nn.Module): PyTorch model to train on
+        optimizer (Optimizer): PyTorch optimizer
+    
+    Returns:
+        train_loss (float): total loss over entire training dataset
+    """
     model.train()
     losses = 0
 
@@ -56,6 +42,15 @@ def train_epoch(train_dataloader: DataLoader, model: nn.Module, optimizer: Optim
     return losses / len(train_dataloader)
 
 def evaluate(val_dataloader: DataLoader, model: nn.Module):
+    """Evaluates model with a given validation set.
+
+    Args:
+        val_dataloader (DataLoader): PyTorch dataloader with validation data
+        model (nn.Module): PyTorch model to evaluate
+    
+    Returns:
+        val_loss (float): total loss over entire validation dataset
+    """
     model.eval()
     losses = 0
     
@@ -70,6 +65,29 @@ def evaluate(val_dataloader: DataLoader, model: nn.Module):
     
     return losses / len(val_dataloader)
 
+
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
+torch.manual_seed(SEED)
+torch.cuda.manual_seed(SEED)
+np.random.seed(SEED)
+
+wandb.init(project="budgetwise")
+
+tokenizer = AutoTokenizer.from_pretrained(PRETRAINED_MODEL)
+
+train_iter = TableDataset(DATA_FILE, USERS_FILE, tokenizer)
+train_dataloader = DataLoader(train_iter, batch_size=BATCH_SIZE, shuffle=True)
+
+val_iter = TableDataset(DATA_FILE, USERS_FILE, tokenizer, mode='val')
+val_dataloader = DataLoader(val_iter, batch_size=BATCH_SIZE)
+
+config = TapasConfig(num_aggregation_labels=4, answer_loss_cutoff=1e5)
+model = TapasForQuestionAnswering.from_pretrained(PRETRAINED_MODEL, config=config)
+model.to(DEVICE)
+wandb.watch(model, log_freq=LOG_FREQUENCY)
+
+optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
 
 for epoch in range(EPOCHS):
     train_loss = train_epoch(train_dataloader, model, optimizer)

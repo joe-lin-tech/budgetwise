@@ -3,7 +3,15 @@ import pandas as pd
 import json
 
 
-def load_merchants(file: str):
+def load_merchants(file: str = 'merchants.csv'):
+    """Loads a dictionary of merchants given a merchant file.
+
+    Args:
+        file (str): Path to list of merchants (default is merchants.csv)
+    
+    Returns:
+        merchants (dict): a dictionary of saved merchants
+    """
     merchants = {}
     with open(file, 'r') as f:
         reader = csv.reader(f)
@@ -13,7 +21,15 @@ def load_merchants(file: str):
             merchants[row[0]] = row[1]
     return merchants
 
-def load_users(file: str):
+def load_users(file: str = 'users.csv'):
+    """Loads a dataframe of users given a users file.
+
+    Args:
+        file (str): Path to list of users (default is users.csv)
+    
+    Returns:
+        users (pd.DataFrame): a Pandas dataframe of saved users
+    """
     with open(file, 'r') as f:
         reader = csv.reader(f)
         for i, row in enumerate(reader):

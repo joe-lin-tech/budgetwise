@@ -6,7 +6,9 @@ import json
 import pandas as pd
 import time
 from datetime import datetime, timedelta
+import random
 from load import load_merchants, load_users
+from collections import defaultdict
 from params import *
 
 
@@ -38,7 +40,7 @@ def generate_transactions(num: int = 48, delta: int = 365, file: str = 'merchant
         save_file (str): Path to save file (default is None)
 
     Returns:
-        list: a list of generated transactions
+        transactions (list): a list of generated transactions
     """
     fake = Factory.create('en_US')
     merchants = load_merchants(file)
@@ -100,12 +102,16 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
         user = users.iloc[id]
         transactions = pd.DataFrame.from_dict(user['transactions'])
 
-        # generate 20 questions of the following form:
-        # Between (start_date) and (end_date), how many transactions were made?
+        # generate 20 questions of the following forms:
+        # (1) Between (start_date) and (end_date), how many transactions were made?
+        # (2) How many transactions were made between (start_date) and (end_date)?
         for i in range(20):
             date_idxs = sorted(random.choices(range(len(transactions)), k=2))
             start_date, end_date = transactions.iloc[date_idxs[0]]['date'], transactions.iloc[date_idxs[1]]['date']
-            question = f"Between {start_date} and {end_date}, how many transactions were made?"
+            question = random.choice([
+                f"Between {start_date} and {end_date}, how many transactions were made?",
+                f"How many transactions were made between {start_date} and {end_date}?"
+            ])
             answer_coordinates = [(i, transactions.columns.get_loc('date')) for i in range(date_idxs[0], date_idxs[1] + 1)]
             answer_float = date_idxs[1] - date_idxs[0] + 1
             queries.append({
@@ -116,11 +122,15 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
                 "aggregation_labels": COUNT
             })
 
-        # generate following question:
-        # What category did I spend most frequently on?
+        # generate question with one of the following forms:
+        # (1) What category did I spend most frequently on?
+        # (2) What was my biggest spending category?
         category = transactions['category'].mode()[0]
         answer_coordinates = [(i, transactions.columns.get_loc('category')) for i in range(len(transactions)) if transactions.iloc[i]['category'] == category]
-        question = "What category did I spend most frequently on?"
+        question = random.choice([
+            "What category did I spend most frequently on?",
+            "What was my biggest spending category?"
+        ])
         queries.append({
             "id": id,
             "question": question,
@@ -129,11 +139,15 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
             "aggregation_labels": NONE
         })
 
-        # generate following question:
-        # What spending category am I most inconsistent in?
+        # generate question with one of the following forms:
+        # (1) What spending category am I most inconsistent in?
+        # (2) What category do I spend the least on?
         category = transactions['category'].value_counts().index[-1]
         answer_coordinates = [(i, transactions.columns.get_loc('category')) for i in range(len(transactions)) if transactions.iloc[i]['category'] == category]
-        question = "What spending category am I most inconsistent in?"
+        question = random.choice([
+            "What spending category am I most inconsistent in?",
+            "What category do I spend the least on?"
+        ])
         queries.append({
             "id": id,
             "question": question,
@@ -142,23 +156,26 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
             "aggregation_labels": NONE
         })
 
-        # generate 20 questions of the following form:
-        # What is the total amount I've spent in the last (num_days) days?
-        # max_days = (datetime.now() - datetime.strptime(transactions.iloc[0]['date'], '%Y-%m-%d %H:%M:%S.%f')).days
+        # generate 20⋅(1 + len(CATEGORIES)) questions of the following forms:
+        # (1) What is the total amount I've spent in the last (num_days) days?
+        # (2) In the last (num_days) days, how much did I spend in total?
+        # (3) What is the total amount I've spent in (category) in the last (num_days) days?
         max_days = (datetime.now() - datetime.fromtimestamp(transactions.iloc[0]['date'])).days
         num_days = sorted(random.choices(range(max_days), k=20))
         i = 0
-        curr_amt = 0
+        curr_amt = defaultdict(float)
         for j in range(len(transactions) - 1, -1, -1):
             while i < len(num_days):
                 ref_date = datetime.now() - timedelta(days=num_days[i])
-                # curr_date = datetime.strptime(transactions.iloc[j]['date'], '%Y-%m-%d %H:%M:%S.%f')
                 curr_date = datetime.fromtimestamp(transactions.iloc[j]['date'])
 
                 if ref_date > curr_date:
-                    question = f"What is the total amount I've spent in the last {num_days[i]} days?"
-                    answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions) - 1, j, -1)] # TODO - decide if date should be included
-                    answer_float = round(curr_amt, 2)
+                    question = random.choice([
+                        f"What is the total amount I've spent in the last {num_days[i]} days?",
+                        f"In the last {num_days[i]} days, how much did I spend in total?"
+                    ])
+                    answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions) - 1, j, -1)]
+                    answer_float = round(curr_amt['total'], 2)
                     if answer_float > 0 and len(answer_coordinates) > 0:
                         queries.append({
                             "id": id,
@@ -167,13 +184,26 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
                             "answer_text": str(answer_float),
                             "aggregation_labels": SUM
                         })
+                    for category in CATEGORIES:
+                        question = f"What is the total amount I've spent in {category} in the last {num_days[i]} days?"
+                        answer_float = round(curr_amt[category], 2)
+                        answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions) - 1, j, -1) if transactions.iloc[i]['category'] == category]
+                        if answer_float > 0 and len(answer_coordinates) > 0:
+                            queries.append({
+                                "id": id,
+                                "question": question,
+                                "answer_coordinates": json.dumps(answer_coordinates),
+                                "answer_text": str(answer_float),
+                                "aggregation_labels": SUM
+                            })
                     i += 1
                 else:
-                    curr_amt += transactions.iloc[j]['amount']
+                    curr_amt['total'] += transactions.iloc[j]['amount']
+                    curr_amt[transactions.iloc[j]['category']] += transactions.iloc[j]['amount']
                     break
 
         # generate following question for each spending category:
-        # What is the total amount I've spent in (category)?
+        # (1) What is the total amount I've spent in (category)?
         for category in CATEGORIES:
             total = transactions[transactions['category'] == category]['amount'].sum()
             question = f"What is the total amount I've spent in {category}?"
@@ -189,7 +219,7 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
                 })
         
         # generate following question for each merchant:
-        # What is the total amount I've spent at (merchant)?
+        # (1) What is the total amount I've spent at (merchant)?
         for merchant in transactions['merchant'].unique():
             total = transactions[transactions['merchant'] == merchant]['amount'].sum()
             question = f"What is the total amount I've spent at {merchant}?"
@@ -205,7 +235,7 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
 
 
         # generate following question:
-        # What merchant did I spend the most on?
+        # (1) What merchant did I spend the most on?
         merchant = transactions['merchant'].mode()[0]
         answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions)) if transactions.iloc[i]['merchant'] == merchant]
         question = "What merchant did I spend the most on?"
@@ -216,14 +246,14 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
             "answer_text": merchant,
             "aggregation_labels": NONE
         })
-
-
     
-    with open(save_file if save_file else 'data.csv', 'a') as f:
+    # write queries to save file
+    with open(save_file if save_file else 'data.csv', 'w') as f:
         writer = csv.writer(f)
         writer.writerow(['id', 'question', 'answer_coordinates', 'answer_text', 'aggregation_labels'])
         for q in queries:
             writer.writerow(list(q.values()))
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(prog='generate.py', description='Script for generating financial relevant data.')
