@@ -7,19 +7,27 @@ from dataset import TableDataset
 from tqdm import tqdm
 import warnings
 import wandb
+import numpy as np
 from params import *
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
+torch.manual_seed(SEED)
+torch.cuda.manual_seed(SEED)
+np.random.seed(SEED)
+
+
 wandb.init(project="budgetwise")
 
-train_iter = TableDataset(DATA_FILE, USERS_FILE, AutoTokenizer.from_pretrained(PRETRAINED_MODEL))
-train_dataloader = DataLoader(train_iter, batch_size=BATCH_SIZE)
+tokenizer = AutoTokenizer.from_pretrained(PRETRAINED_MODEL)
 
-val_iter = TableDataset(DATA_FILE, USERS_FILE, AutoTokenizer.from_pretrained(PRETRAINED_MODEL), mode='val')
+train_iter = TableDataset(DATA_FILE, USERS_FILE, tokenizer)
+train_dataloader = DataLoader(train_iter, batch_size=BATCH_SIZE, shuffle=True)
+
+val_iter = TableDataset(DATA_FILE, USERS_FILE, tokenizer, mode='val')
 val_dataloader = DataLoader(val_iter, batch_size=BATCH_SIZE)
 
-config = TapasConfig(num_aggregation_labels=4)
+config = TapasConfig(num_aggregation_labels=4, answer_loss_cutoff=1e5)
 model = TapasForQuestionAnswering.from_pretrained(PRETRAINED_MODEL, config=config)
 model.to(DEVICE)
 wandb.watch(model, log_freq=LOG_FREQUENCY)
@@ -51,13 +59,14 @@ def evaluate(val_dataloader: DataLoader, model: nn.Module):
     model.eval()
     losses = 0
     
-    for inputs in tqdm(val_dataloader):
-        inputs = { k: v.to(DEVICE) for k, v in inputs.items() }
+    with torch.no_grad():
+        for inputs in tqdm(val_dataloader):
+            inputs = { k: v.to(DEVICE) for k, v in inputs.items() }
 
-        outputs = model(**inputs)
-        loss = outputs.loss
+            outputs = model(**inputs)
+            loss = outputs.loss
 
-        losses += loss.item()
+            losses += loss.item()
     
     return losses / len(val_dataloader)
 
@@ -75,3 +84,4 @@ for epoch in range(EPOCHS):
             'train_loss': train_loss,
             'val_loss': val_loss
         }, CHECKPOINT_FILE)
+        # TODO - add drive.flush_and_unmount() to sync to drive when training on colab

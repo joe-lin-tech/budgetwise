@@ -4,14 +4,11 @@ import csv
 import random
 import json
 import pandas as pd
+import time
 from datetime import datetime, timedelta
 from load import load_merchants, load_users
+from params import *
 
-
-CATEGORIES = ['agricultural', 'contracted', 'transportation', 'utility', 'retail', 'clothing',
-              'misc', 'business', 'government', 'airlines', 'lodging', 'professional']
-
-SUM, COUNT, AVERAGE, NONE = 0, 1, 2, 3
 
 def generate_merchants(num: int = 1000, save_file: str = None):
     """Generates a list of fake merchants and saves their name and corresponding category in a file.
@@ -29,13 +26,13 @@ def generate_merchants(num: int = 1000, save_file: str = None):
         for i in range(num):
             writer.writerow([fake.company(), random.choice(CATEGORIES)])
 
-def generate_transactions(num: int = 64, delta: int = 365, file: str = 'merchants.csv', save_file: str = None):
+def generate_transactions(num: int = 48, delta: int = 365, file: str = 'merchants.csv', save_file: str = None):
     """Generates a list of fake transactions (from `delta` days in the past to now) given a list of merchants.
 
     If the argument `save_file` is None, the list of transactions is returned instead.
 
     Args:
-        num (int): Number of fake transactions to generate (default is 64)
+        num (int): Number of fake transactions to generate (default is 48)
         delta (int): Number of days in the past to generate transactions from (default is 365)
         file (str): Path to list of merchants (default is merchants.csv)
         save_file (str): Path to save file (default is None)
@@ -48,6 +45,7 @@ def generate_transactions(num: int = 64, delta: int = 365, file: str = 'merchant
     transactions = []
     for i in range(num):
         date = fake.date_time_between_dates(datetime.now() - timedelta(days=delta), datetime.now())
+        date = int(time.mktime(date.timetuple()))
         amount = round(random.uniform(1, 250), 2) # TODO - fix amount range
         merchant = random.choice(list(merchants.keys()))
         category = merchants[merchant]
@@ -128,7 +126,7 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
             "question": question,
             "answer_coordinates": json.dumps(answer_coordinates),
             "answer_text": category,
-            "aggregation_labels": COUNT
+            "aggregation_labels": NONE
         })
 
         # generate following question:
@@ -141,19 +139,21 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
             "question": question,
             "answer_coordinates": json.dumps(answer_coordinates),
             "answer_text": category,
-            "aggregation_labels": COUNT
+            "aggregation_labels": NONE
         })
 
         # generate 20 questions of the following form:
         # What is the total amount I've spent in the last (num_days) days?
-        max_days = (datetime.now() - datetime.strptime(transactions.iloc[0]['date'], '%Y-%m-%d %H:%M:%S.%f')).days
+        # max_days = (datetime.now() - datetime.strptime(transactions.iloc[0]['date'], '%Y-%m-%d %H:%M:%S.%f')).days
+        max_days = (datetime.now() - datetime.fromtimestamp(transactions.iloc[0]['date'])).days
         num_days = sorted(random.choices(range(max_days), k=20))
         i = 0
         curr_amt = 0
         for j in range(len(transactions) - 1, -1, -1):
             while i < len(num_days):
                 ref_date = datetime.now() - timedelta(days=num_days[i])
-                curr_date = datetime.strptime(transactions.iloc[j]['date'], '%Y-%m-%d %H:%M:%S.%f')
+                # curr_date = datetime.strptime(transactions.iloc[j]['date'], '%Y-%m-%d %H:%M:%S.%f')
+                curr_date = datetime.fromtimestamp(transactions.iloc[j]['date'])
 
                 if ref_date > curr_date:
                     question = f"What is the total amount I've spent in the last {num_days[i]} days?"
@@ -203,19 +203,20 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
                 "aggregation_labels": SUM
             })
 
-        # TODO - readd question with new aggregation operator
+
         # generate following question:
         # What merchant did I spend the most on?
-        # merchant = transactions['merchant'].mode()[0]
-        # answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions)) if transactions.iloc[i]['merchant'] == merchant]
-        # question = "What merchant did I spend the most on?"
-        # queries.append({
-        #     "id": id,
-        #     "question": question,
-        #     "answer_coordinates": json.dumps(answer_coordinates),
-        #     "answer_text": merchant,
-        #     "aggregation_labels": SUM
-        # })
+        merchant = transactions['merchant'].mode()[0]
+        answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions)) if transactions.iloc[i]['merchant'] == merchant]
+        question = "What merchant did I spend the most on?"
+        queries.append({
+            "id": id,
+            "question": question,
+            "answer_coordinates": json.dumps(answer_coordinates),
+            "answer_text": merchant,
+            "aggregation_labels": NONE
+        })
+
 
     
     with open(save_file if save_file else 'data.csv', 'a') as f:
@@ -224,23 +225,23 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
         for q in queries:
             writer.writerow(list(q.values()))
 
+if __name__ == "__main__":
+    parser = ArgumentParser(prog='generate.py', description='Script for generating financial relevant data.')
+    parser.add_argument('-t', '--type', choices=['merchants', 'transactions', 'users', 'questions'], help='type of data to generate')
+    parser.add_argument('-n', '--num', type=int, help='number of data points')
+    parser.add_argument('-d', '--delta', type=int, help='how far to look back in transaction history (in days)')
+    parser.add_argument('-s', '--save-file', type=str, help='path to save file')
+    parser.add_argument('-f', '--file', type=str, help='path to data source file')
 
-parser = ArgumentParser(prog='generate.py', description='Script for generating financial relevant data.')
-parser.add_argument('-t', '--type', choices=['merchants', 'transactions', 'users', 'questions'], help='type of data to generate')
-parser.add_argument('-n', '--num', type=int, help='number of data points')
-parser.add_argument('-d', '--delta', type=int, help='how far to look back in transaction history (in days)')
-parser.add_argument('-s', '--save-file', type=str, help='path to save file')
-parser.add_argument('-f', '--file', type=str, help='path to data source file')
+    args = parser.parse_args()
+    params = { arg: getattr(args, arg) for arg in vars(args) if getattr(args, arg) is not None }
+    params.pop('type')
 
-args = parser.parse_args()
-params = { arg: getattr(args, arg) for arg in vars(args) if getattr(args, arg) is not None }
-params.pop('type')
-
-if args.type == 'merchants':
-    generate_merchants(**params)
-elif args.type == 'transactions':
-    generate_transactions(**params)
-elif args.type == 'users':
-    generate_users(**params)
-elif args.type == 'questions':
-    generate_questions(**params)
+    if args.type == 'merchants':
+        generate_merchants(**params)
+    elif args.type == 'transactions':
+        generate_transactions(**params)
+    elif args.type == 'users':
+        generate_users(**params)
+    elif args.type == 'questions':
+        generate_questions(**params)
