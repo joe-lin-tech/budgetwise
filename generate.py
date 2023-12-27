@@ -157,9 +157,11 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
         })
 
         # generate 20⋅(1 + len(CATEGORIES)) questions of the following forms:
-        # (1) What is the total amount I've spent in the last (num_days) days?
-        # (2) In the last (num_days) days, how much did I spend in total?
-        # (3) What is the total amount I've spent in (category) in the last (num_days) days?
+        # (1) What is the total amount I've spent from (ref_timestamp) to (now_timestamp)?
+        # (2) What is the total amount I've spent from (num_days) days ago to today?
+        # (3) In the last (num_days) days, how much did I spend in total?
+        # (4) What is the total amount I've spent in (category) from (ref_date) to (now_timestamp)?
+        # (5) What is the total amount I've spent in (category) from (num_days) days ago to today?
         max_days = (datetime.now() - datetime.fromtimestamp(transactions.iloc[0]['date'])).days
         num_days = sorted(random.choices(range(max_days), k=20))
         i = 0
@@ -170,8 +172,11 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
                 curr_date = datetime.fromtimestamp(transactions.iloc[j]['date'])
 
                 if ref_date > curr_date:
+                    ref_timestamp = int(time.mktime(ref_date.timetuple()))
+                    now_timestamp = int(time.mktime(datetime.now()))
                     question = random.choice([
-                        f"What is the total amount I've spent in the last {num_days[i]} days?",
+                        f"What is the total amount I've spent from {ref_timestamp} to {now_timestamp}?",
+                        f"What is the total amount I've spent from {num_days[i]} days ago to today?",
                         f"In the last {num_days[i]} days, how much did I spend in total?"
                     ])
                     answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions) - 1, j, -1)]
@@ -185,7 +190,10 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
                             "aggregation_labels": SUM
                         })
                     for category in CATEGORIES:
-                        question = f"What is the total amount I've spent in {category} in the last {num_days[i]} days?"
+                        question = random.choice([
+                            f"What is the total amount I've spent in {category} from {ref_timestamp} to {now_timestamp}?",
+                            f"What is the total amount I've spent in {category} from {num_days[i]} days ago to today?"
+                        ])
                         answer_float = round(curr_amt[category], 2)
                         answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions) - 1, j, -1) if transactions.iloc[i]['category'] == category]
                         if answer_float > 0 and len(answer_coordinates) > 0:
@@ -232,7 +240,6 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
                 "answer_text": str(answer_float),
                 "aggregation_labels": SUM
             })
-
 
         # generate following question:
         # (1) What merchant did I spend the most on?

@@ -7,6 +7,12 @@ from dataset import TableDataset
 from tqdm import tqdm
 import pandas as pd
 import json
+import sparknlp
+from sparknlp.base import DocumentAssembler, Pipeline
+from sparknlp.annotator import MultiDateMatcher
+from pyspark.sql.types import *
+from datetime import datetime
+import time
 from InquirerPy import prompt
 from argparse import ArgumentParser
 import warnings
@@ -89,6 +95,8 @@ else:
     transactions = pd.DataFrame.from_dict(json.loads(users.iloc[0]['transactions'])).astype(str)
     print(transactions.to_markdown())
 
+    spark = sparknlp.start()
+
     while True:
         query = prompt({
             'type': 'input',
@@ -98,6 +106,25 @@ else:
 
         if query == 'q':
             break
+
+        document_assembler = DocumentAssembler().setInputCol("text").setOutputCol("document")
+        preprocess = Pipeline(stages=[
+            DocumentAssembler().setInputCol("text").setOutputCol("document"),
+            MultiDateMatcher().setInputCols("document").setOutputCol("multi_date").setOutputFormat("MM/dd/yy")
+        ])
+
+        spark_df = spark.createDataFrame([query], StringType()).toDF("text")
+        result = preprocess.fit(spark_df).transform(spark_df)
+
+        substrings = []
+        timestamps = []
+        for date in result.select("multi_date").collect()[0].multi_date:
+            substrings.append(query[date.begin:date.end + 1])
+            timestamp = str(int(time.mktime(datetime.strptime(date.result, '%m/%d/%y').timetuple())))
+            timestamps.append(timestamp)
+        
+        for substring, timestamp in zip(substrings, timestamps):
+            query = query.replace(substring, timestamp)
 
         inputs = tokenizer(
             table=transactions,
