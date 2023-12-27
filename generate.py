@@ -86,13 +86,12 @@ def generate_users(num: int = 10, file: str = 'merchants.csv', save_file: str = 
         for u in users:
             writer.writerow(list(u.values()))
 
-def generate_questions(file: str = 'users.csv', save_file: str = None):
-    """Generates a set of questions in a SQA-similar format.
+def generate_queries(file: str = 'users.csv', save_file: str = None):
+    """Generates a set of queries in a SQA-similar format.
 
     If the argument `save_file` is None, the list is saved as data.csv in the current working directory.
 
     Args:
-        num (int): Number of fake users to generate (default is 10)
         file (str): Path to list of users (default is users.csv)
         save_file (str): Path to save file (default is None)
     """
@@ -264,7 +263,7 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
 
 if __name__ == "__main__":
     parser = ArgumentParser(prog='generate.py', description='Script for generating financial relevant data.')
-    parser.add_argument('-t', '--type', choices=['merchants', 'transactions', 'users', 'questions'], help='type of data to generate')
+    parser.add_argument('-t', '--type', choices=['merchants', 'transactions', 'users', 'queries'], help='type of data to generate')
     parser.add_argument('-n', '--num', type=int, help='number of data points')
     parser.add_argument('-d', '--delta', type=int, help='how far to look back in transaction history (in days)')
     parser.add_argument('-s', '--save-file', type=str, help='path to save file')
@@ -281,4 +280,4 @@ if __name__ == "__main__":
     elif args.type == 'users':
         generate_users(**params)
     elif args.type == 'questions':
-        generate_questions(**params)
+        generate_queries(**params)
