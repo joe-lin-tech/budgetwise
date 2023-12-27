@@ -266,8 +266,8 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--type', choices=['merchants', 'transactions', 'users', 'queries'], help='type of data to generate')
     parser.add_argument('-n', '--num', type=int, help='number of data points')
     parser.add_argument('-d', '--delta', type=int, help='how far to look back in transaction history (in days)')
-    parser.add_argument('-s', '--save-file', type=str, help='path to save file')
     parser.add_argument('-f', '--file', type=str, help='path to data source file')
+    parser.add_argument('-s', '--save-file', type=str, help='path to save file')
 
     args = parser.parse_args()
     params = { arg: getattr(args, arg) for arg in vars(args) if getattr(args, arg) is not None }

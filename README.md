@@ -62,9 +62,17 @@ As a summary, this script can generate (1) a list of merchants, (2) a transactio
     python3 generate.py -t queries
     ```
 
-For more function API details, expand the following:
+For more details on command line arguments and function API, expand the following:
 <details>
-<summary>Generation Script API Details</summary>
+<summary>Generation Script Args and API Details</summary>
+
+| Specifier | Usage |
+| --------- | --------- |
+| ```-t```, ```--type``` | type of data to generate (```merchants```, ```transactions```, ```users```, or ```queries```) |
+| ```-n```, ```--num``` | number of data points to generate |
+| ```-d```, ```--delta``` | how far in the past to generate transactions from (in days) |
+| ```-f```, ```--file``` | path to data source file |
+| ```-s```, ```--save-file``` | path to save file |
 
 ```shell
 generate_merchants(num: int = 1000, save_file: str = None)
@@ -127,12 +135,46 @@ To train the model, simply run the following:
 python3 train.py
 ```
 
-For inference, there are two modes to run under: (1) score and (2) input:
-```shell
-python3 predict.py -m score
-```
+For inference, there are two modes to run under:
 
-```shell
-python3 predict.py -m input
-```
+1. **Score.** Run model inference with randomly generated queries on a generated user and transaction database.
+    ```shell
+    python3 predict.py -m score
+    ```
+
+2. **Input.** Run model inference with user input queries on a generated user and transaction database.
+    ```shell
+    python3 predict.py -m input
+    ```
 </details>
+
+## Model Architecture
+The model is a fine-tuned version of TAPAS [[1]](#1), which is capable of handling common Table Question Answering tasks including cell selection and aggregation queries. Input tokens are processed in a series of attention and linear layers, structured in the same way as BERT. An aggregation operator is predicted with the class token and cell selection is performed on output table embeddings. The general architecture is depicted below [[1]](#1):
+![tapas general architecture](references/tapas.png)
+
+## Training Pipeline
+The training data is generated from the aforementioned script and contains a variety of queries of the following forms:
+- Between ```start_date``` and ```end_date```, how many transactions were made?
+- How many transactions were made between ```start_date``` and ```end_date```?
+- What category did I spend most frequently on?
+- What was my biggest spending category?
+- What spending category am I most inconsistent in?
+- What category do I spend the least on?
+- What is the total amount I've spent from ```ref_timestamp``` to ```now_timestamp```?
+- What is the total amount I've spent from ```num_days``` days ago to today?
+- In the last ```num_days``` days, how much did I spend in total?
+- What is the total amount I've spent in ```category``` from ```ref_date``` to ```now_timestamp```?
+- What is the total amount I've spent in ```category``` from ```num_days``` days ago to today?
+- What is the total amount I've spent in ```category```?
+- What is the total amount I've spent at ```merchant```?
+- What merchant did I spend the most on?
+
+## Inference Pipeline
+To conduct inference, the input queries are first processed through a SparkNLP pipeline and its ```MultiDateMatcher``` [[2]](#2) that extracts and replaces dates with Unix timestamps.
+
+## References
+<a id="1">[1]</a>
+J. Herzig, P. Krzysztof Nowak, T. Muller, F. Piccinno, J. Martin Eisenschlos. TAPAS: Weakly Supervised Table Parsing via Pre-training. 2020.
+
+<a id="2">[2]</a>
+V. Kocaman, D. Talby. Spark NLP: Natural Language Understanding at Scale. 2021.
