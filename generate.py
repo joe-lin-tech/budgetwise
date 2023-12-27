@@ -173,7 +173,7 @@ def generate_questions(file: str = 'users.csv', save_file: str = None):
 
                 if ref_date > curr_date:
                     ref_timestamp = int(time.mktime(ref_date.timetuple()))
-                    now_timestamp = int(time.mktime(datetime.now()))
+                    now_timestamp = int(time.mktime(datetime.now().timetuple()))
                     question = random.choice([
                         f"What is the total amount I've spent from {ref_timestamp} to {now_timestamp}?",
                         f"What is the total amount I've spent from {num_days[i]} days ago to today?",
