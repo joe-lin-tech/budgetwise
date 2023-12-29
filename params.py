@@ -13,8 +13,6 @@ TEST_FILE = 'test.csv'
 USERS_FILE = 'users.csv'
 CHECKPOINT_FILE = 'model.pt' # TODO - change to /content/drive/My Drive/model.pt for training on colab
 
-
 CATEGORIES = ['agricultural', 'contracted', 'transportation', 'utility', 'retail', 'clothing',
               'misc', 'business', 'government', 'airlines', 'lodging', 'professional']
-SUM, COUNT, AVERAGE, NONE = 0, 1, 2, 3
-AGGREGATION_OPS = { SUM: 'SUM', COUNT: 'COUNT', AVERAGE: 'AVERAGE', NONE: 'NONE' }
+SUM, COUNT, AVERAGE, ARGMAX_SUM, ARGMIN_SUM, ARGMAX_STD, ARGMIN_STD, NONE = 0, 1, 2, 3, 4, 5, 6, 7

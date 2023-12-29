@@ -2,17 +2,19 @@ from transformers import AutoTokenizer, TapasForQuestionAnswering, TapasConfig
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, default_collate
-from generate import generate_merchants, generate_users, generate_questions
+from generate import generate_merchants, generate_users, generate_queries
 from dataset import TableDataset
 from tqdm import tqdm
 import pandas as pd
 import json
+import numpy as np
 import sparknlp
 from sparknlp.base import DocumentAssembler, Pipeline
 from sparknlp.annotator import MultiDateMatcher
 from pyspark.sql.types import *
 from datetime import datetime
 import time
+from collections import defaultdict
 from InquirerPy import prompt
 from argparse import ArgumentParser
 import warnings
@@ -21,33 +23,78 @@ from params import *
 
 
 def predict(model: nn.Module, inputs: dict, table: List[pd.DataFrame]):
+    """Forward propagate inputs through the trained model and return predicted coordinates and corresponding answers using the original table.
+
+    Args:
+        model: Trained PyTorch model
+        inputs: Dictionary of input tensors
+        table: List of transaction tables associated with input queries
+    
+    Returns:
+        Tuple of predicted coordinates and (post-aggregated) prediction
+    """
     outputs = model(**inputs)
     predicted_coordinates, predicted_aggregation_indices = tokenizer.convert_logits_to_predictions(
-        inputs, outputs.logits.detach(), outputs.logits_aggregation.detach()
+        inputs, outputs.logits.detach(), outputs.logits_aggregation.detach(), cell_classification_threshold=0.5
     )
 
     predictions = []
     for i, coordinates in enumerate(predicted_coordinates):
-        if len(coordinates) == 1:
-            # only a single cell:
-            predictions.append(table[i].iat[coordinates[0]])
-        else:
-            # multiple cells
-            cell_values = []
+        cell_values = []
+        for coordinate in coordinates:
+            cell_values.append(table[i].iat[coordinate])
+        if predicted_aggregation_indices[i] == SUM:
+            aggregated_prediction = str(round(sum([float(c) for c in cell_values]), 2))
+            aggregated_prediction = "\033[1;32m" + aggregated_prediction + "\033[0m"
+            predictions.append("SUM > " + ", ".join(cell_values) + " > " + aggregated_prediction)
+        elif predicted_aggregation_indices[i] == COUNT:
+            aggregated_prediction = str(len(cell_values))
+            aggregated_prediction = "\033[1;32m" + aggregated_prediction + "\033[0m"
+            predictions.append("COUNT > " + aggregated_prediction)
+        elif predicted_aggregation_indices[i] == AVERAGE:
+            aggregated_prediction = str(round(sum([float(c) for c in cell_values]) / len(cell_values), 2))
+            aggregated_prediction = "\033[1;32m" + aggregated_prediction + "\033[0m"
+            predictions.append("AVERAGE > " + ", ".join(cell_values) + " > " + aggregated_prediction)
+        elif predicted_aggregation_indices[i] == ARGMAX_SUM:
+            amounts = defaultdict(float)
             for coordinate in coordinates:
-                cell_values.append(table[i].iat[coordinate])
-            if predicted_aggregation_indices[i] == SUM:
-                aggregated_prediction = str(round(sum([float(c) for c in cell_values]), 2))
-                predictions.append(AGGREGATION_OPS[SUM] + " > " + ", ".join(cell_values) + " > " + aggregated_prediction)
-            elif predicted_aggregation_indices[i] == COUNT:
-                aggregated_prediction = str(len(cell_values))
-                predictions.append(AGGREGATION_OPS[COUNT] + " > " + aggregated_prediction)
-            else:
-                predictions.append(AGGREGATION_OPS[NONE] + " > " + ", ".join(cell_values))
+                amounts[table[i].iat[coordinate]] += float(table[i].iat[(coordinate[0], table[i].columns.get_loc('amount'))])
+            aggregated_prediction = max(amounts, key=amounts.get)
+            aggregated_prediction = "\033[1;32m" + aggregated_prediction + "\033[0m"
+            predictions.append("ARGMAX_SUM > " + ", ".join(cell_values) + " > " + aggregated_prediction)
+        elif predicted_aggregation_indices[i] == ARGMIN_SUM:
+            amounts = defaultdict(float)
+            for coordinate in coordinates:
+                amounts[table[i].iat[coordinate]] += float(table[i].iat[(coordinate[0], table[i].columns.get_loc('amount'))])
+            aggregated_prediction = min(amounts, key=amounts.get)
+            aggregated_prediction = "\033[1;32m" + aggregated_prediction + "\033[0m"
+            predictions.append("ARGMIN_SUM > " + ", ".join(cell_values) + " > " + aggregated_prediction)
+        elif predicted_aggregation_indices[i] == ARGMAX_STD:
+            amounts = defaultdict(list)
+            for coordinate in coordinates:
+                amounts[table[i].iat[coordinate]].append(float(table[i].iat[(coordinate[0], table[i].columns.get_loc('amount'))]))
+            aggregated_prediction = max(amounts, key=lambda k: np.std(amounts[k]))
+            aggregated_prediction = "\033[1;32m" + aggregated_prediction + "\033[0m"
+            predictions.append("ARGMAX_STD > " + ", ".join(cell_values) + " > " + aggregated_prediction)
+        elif predicted_aggregation_indices[i] == ARGMIN_STD:
+            amounts = defaultdict(list)
+            for coordinate in coordinates:
+                amounts[table[i].iat[coordinate]].append(float(table[i].iat[(coordinate[0], table[i].columns.get_loc('amount'))]))
+            aggregated_prediction = min(amounts, key=lambda k: np.std(amounts[k]))
+            aggregated_prediction = "\033[1;32m" + aggregated_prediction + "\033[0m"
+            predictions.append("ARGMIN_STD > " + ", ".join(cell_values) + " > " + aggregated_prediction)
+        else:
+            predictions.append("NONE > " + ", ".join(cell_values))
     
     return predicted_coordinates, predictions
 
 def score(test_dataloader: DataLoader, model: nn.Module):
+    """Runs inference and scores trained model with a generated test dataset.
+
+    Args:
+        test_dataloader: PyTorch dataloader with test data
+        model: Trained PyTorch model
+    """
     model.eval()
 
     with torch.no_grad():
@@ -68,8 +115,8 @@ parser.add_argument('-c', '--ckpt-file', type=str, default=CHECKPOINT_FILE, help
 args = parser.parse_args()
 
 checkpoint = torch.load(args.ckpt_file, map_location=DEVICE)
-config = TapasConfig(num_aggregation_labels=4, answer_loss_cutoff=1e5)
-model = TapasForQuestionAnswering.from_pretrained(PRETRAINED_MODEL, config=config)
+config = TapasConfig(num_aggregation_labels=8, answer_loss_cutoff=1e5)
+model = TapasForQuestionAnswering.from_pretrained(PRETRAINED_MODEL, config=config, ignore_mismatched_sizes=True)
 model.load_state_dict(checkpoint['model_state_dict'])
 model.to(DEVICE)
 
@@ -79,7 +126,7 @@ generate_merchants(save_file='test-merchants.csv')
 generate_users(num=10 if args.mode == 'score' else 1, file='test-merchants.csv', save_file='test-users.csv')
 
 if args.mode == 'score':
-    generate_questions(file='test-users.csv', save_file=TEST_FILE)
+    generate_queries(file='test-users.csv', save_file=TEST_FILE)
 
     def collate_fn(batch):
         encodings, references = zip(*batch)

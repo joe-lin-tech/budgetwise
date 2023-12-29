@@ -7,10 +7,10 @@ def load_merchants(file: str = 'merchants.csv'):
     """Loads a dictionary of merchants given a merchant file.
 
     Args:
-        file (str): Path to list of merchants (default is merchants.csv)
+        file: Path to list of merchants (default is merchants.csv)
     
     Returns:
-        merchants (dict): a dictionary of saved merchants
+        Dictionary of saved merchants
     """
     merchants = {}
     with open(file, 'r') as f:
@@ -25,10 +25,10 @@ def load_users(file: str = 'users.csv'):
     """Loads a dataframe of users given a users file.
 
     Args:
-        file (str): Path to list of users (default is users.csv)
+        file: Path to list of users (default is users.csv)
     
     Returns:
-        users (pd.DataFrame): a Pandas dataframe of saved users
+        Pandas dataframe of saved users
     """
     with open(file, 'r') as f:
         reader = csv.reader(f)

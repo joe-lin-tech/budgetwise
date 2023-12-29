@@ -18,8 +18,8 @@ def generate_merchants(num: int = 1000, save_file: str = None):
     If the argument `save_file` is None, the list is saved as merchants.csv in the current working directory.
 
     Args:
-        num (int): Number of fake merchants to generate (default is 1000)
-        save_file (str): Path to save file (default is None)
+        num: Number of fake merchants to generate (default is 1000)
+        save_file: Path to save file (default is None)
     """
     fake = Factory.create('en_US')
     with open(save_file if save_file else 'merchants.csv', 'w') as f:
@@ -34,13 +34,13 @@ def generate_transactions(num: int = 48, delta: int = 365, file: str = 'merchant
     If the argument `save_file` is None, the list of transactions is returned instead.
 
     Args:
-        num (int): Number of fake transactions to generate (default is 48)
-        delta (int): Number of days in the past to generate transactions from (default is 365)
-        file (str): Path to list of merchants (default is merchants.csv)
-        save_file (str): Path to save file (default is None)
+        num: Number of fake transactions to generate (default is 48)
+        delta: Number of days in the past to generate transactions from (default is 365)
+        file: Path to list of merchants (default is merchants.csv)
+        save_file: Path to save file (default is None)
 
     Returns:
-        transactions (list): a list of generated transactions
+        transactions: List of generated transactions
     """
     fake = Factory.create('en_US')
     merchants = load_merchants(file)
@@ -70,9 +70,9 @@ def generate_users(num: int = 10, file: str = 'merchants.csv', save_file: str = 
     If the argument `save_file` is None, the list is saved as users.csv in the current working directory.
 
     Args:
-        num (int): Number of fake users to generate (default is 10)
-        file (str): Path to list of merchants for generating transactions from (default is merchants.csv)
-        save_file (str): Path to save file (default is None)
+        num: Number of fake users to generate (default is 10)
+        file: Path to list of merchants for generating transactions from (default is merchants.csv)
+        save_file: Path to save file (default is None)
     """
     fake = Factory.create('en_US')
     users = []
@@ -92,8 +92,8 @@ def generate_queries(file: str = 'users.csv', save_file: str = None):
     If the argument `save_file` is None, the list is saved as data.csv in the current working directory.
 
     Args:
-        file (str): Path to list of users (default is users.csv)
-        save_file (str): Path to save file (default is None)
+        file: Path to list of users (default is users.csv)
+        save_file: Path to save file (default is None)
     """
     users = load_users(file)
     queries = []
@@ -101,10 +101,10 @@ def generate_queries(file: str = 'users.csv', save_file: str = None):
         user = users.iloc[id]
         transactions = pd.DataFrame.from_dict(user['transactions'])
 
-        # generate 20 questions of the following forms:
+        # generate 5 questions of the following forms:
         # (1) Between (start_date) and (end_date), how many transactions were made?
         # (2) How many transactions were made between (start_date) and (end_date)?
-        for i in range(20):
+        for i in range(5):
             date_idxs = sorted(random.choices(range(len(transactions)), k=2))
             start_date, end_date = transactions.iloc[date_idxs[0]]['date'], transactions.iloc[date_idxs[1]]['date']
             question = random.choice([
@@ -121,48 +121,85 @@ def generate_queries(file: str = 'users.csv', save_file: str = None):
                 "aggregation_labels": COUNT
             })
 
-        # generate question with one of the following forms:
-        # (1) What category did I spend most frequently on?
+        # generate question with the following forms:
+        # (1) What category did I spend the most on?
         # (2) What was my biggest spending category?
-        category = transactions['category'].mode()[0]
-        answer_coordinates = [(i, transactions.columns.get_loc('category')) for i in range(len(transactions)) if transactions.iloc[i]['category'] == category]
-        question = random.choice([
-            "What category did I spend most frequently on?",
+        # (3) What category did I spend the least on?
+        # (4) What was my smallest spending category?
+        amounts = transactions.groupby(['category']).amount.sum().reset_index()
+        category = amounts['category'][amounts['amount'].idxmax()]
+        answer_coordinates = [(i, transactions.columns.get_loc('category')) for i in range(len(transactions))]
+        questions = [
+            "What category did I spend the most on?",
             "What was my biggest spending category?"
-        ])
-        queries.append({
-            "id": id,
-            "question": question,
-            "answer_coordinates": json.dumps(answer_coordinates),
-            "answer_text": category,
-            "aggregation_labels": NONE
-        })
+        ]
+        for question in questions:
+            queries.append({
+                "id": id,
+                "question": question,
+                "answer_coordinates": json.dumps(answer_coordinates),
+                "answer_text": category,
+                "aggregation_labels": ARGMAX_SUM
+            })
+        
+        category = amounts['category'][amounts['amount'].idxmin()]
+        answer_coordinates = [(i, transactions.columns.get_loc('category')) for i in range(len(transactions))]
+        questions = [
+            "What category did I spend the least on?",
+            "What was my smallest spending category?"
+        ]
+        for question in questions:
+            queries.append({
+                "id": id,
+                "question": question,
+                "answer_coordinates": json.dumps(answer_coordinates),
+                "answer_text": category,
+                "aggregation_labels": ARGMIN_SUM
+            })
 
         # generate question with one of the following forms:
-        # (1) What spending category am I most inconsistent in?
-        # (2) What category do I spend the least on?
-        category = transactions['category'].value_counts().index[-1]
-        answer_coordinates = [(i, transactions.columns.get_loc('category')) for i in range(len(transactions)) if transactions.iloc[i]['category'] == category]
-        question = random.choice([
-            "What spending category am I most inconsistent in?",
-            "What category do I spend the least on?"
-        ])
-        queries.append({
-            "id": id,
-            "question": question,
-            "answer_coordinates": json.dumps(answer_coordinates),
-            "answer_text": category,
-            "aggregation_labels": NONE
-        })
+        # (1) What spending category am I most inconsistent in from (ref_timestamp) to (now_timestamp)?
+        # (2) What category am I least consistent in from (ref_timestamp) to (now_timestamp)?
+        for j in random.choices(range(len(transactions)), k=2):
+            ref_timestamp = transactions.iloc[j]['date']
+            now_timestamp = int(time.mktime(datetime.now().timetuple()))
+            stds = transactions.iloc[j:].groupby(['category']).amount.std(ddof=0).reset_index()
+            category = stds['category'][stds['amount'].idxmax()]
+            answer_coordinates = [(i, transactions.columns.get_loc('category')) for i in range(j, len(transactions))]
+            questions = [
+                f"What spending category am I most inconsistent in from {ref_timestamp} to {now_timestamp}?",
+                f"What category am I least consistent in from {ref_timestamp} to {now_timestamp}?"
+            ]
+            for question in questions:
+                queries.append({
+                    "id": id,
+                    "question": question,
+                    "answer_coordinates": json.dumps(answer_coordinates),
+                    "answer_text": category,
+                    "aggregation_labels": ARGMAX_STD
+                })
+        
+            # generate the following question:
+            # (1) What spending category am I most consistent in from (ref_timestamp) to (now_timestamp)?
+            category = stds['category'][stds['amount'].idxmin()]
+            answer_coordinates = [(i, transactions.columns.get_loc('category')) for i in range(j, len(transactions))]
+            question = f"What spending category am I most consistent in from {ref_timestamp} to {now_timestamp}?"
+            queries.append({
+                "id": id,
+                "question": question,
+                "answer_coordinates": json.dumps(answer_coordinates),
+                "answer_text": category,
+                "aggregation_labels": ARGMIN_STD
+            })
 
-        # generate 20⋅(1 + len(CATEGORIES)) questions of the following forms:
+        # generate 5⋅(1 + len(CATEGORIES)) questions of the following forms:
         # (1) What is the total amount I've spent from (ref_timestamp) to (now_timestamp)?
         # (2) What is the total amount I've spent from (num_days) days ago to today?
         # (3) In the last (num_days) days, how much did I spend in total?
         # (4) What is the total amount I've spent in (category) from (ref_date) to (now_timestamp)?
         # (5) What is the total amount I've spent in (category) from (num_days) days ago to today?
         max_days = (datetime.now() - datetime.fromtimestamp(transactions.iloc[0]['date'])).days
-        num_days = sorted(random.choices(range(max_days), k=20))
+        num_days = sorted(random.choices(range(max_days), k=2))
         i = 0
         curr_amt = defaultdict(float)
         for j in range(len(transactions) - 1, -1, -1):
@@ -175,8 +212,8 @@ def generate_queries(file: str = 'users.csv', save_file: str = None):
                     now_timestamp = int(time.mktime(datetime.now().timetuple()))
                     question = random.choice([
                         f"What is the total amount I've spent from {ref_timestamp} to {now_timestamp}?",
-                        f"What is the total amount I've spent from {num_days[i]} days ago to today?",
-                        f"In the last {num_days[i]} days, how much did I spend in total?"
+                        # f"What is the total amount I've spent from {num_days[i]} days ago to today?",
+                        # f"In the last {num_days[i]} days, how much did I spend in total?"
                     ])
                     answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions) - 1, j, -1)]
                     answer_float = round(curr_amt['total'], 2)
@@ -191,7 +228,7 @@ def generate_queries(file: str = 'users.csv', save_file: str = None):
                     for category in CATEGORIES:
                         question = random.choice([
                             f"What is the total amount I've spent in {category} from {ref_timestamp} to {now_timestamp}?",
-                            f"What is the total amount I've spent in {category} from {num_days[i]} days ago to today?"
+                            # f"What is the total amount I've spent in {category} from {num_days[i]} days ago to today?"
                         ])
                         answer_float = round(curr_amt[category], 2)
                         answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions) - 1, j, -1) if transactions.iloc[i]['category'] == category]
@@ -242,16 +279,76 @@ def generate_queries(file: str = 'users.csv', save_file: str = None):
 
         # generate following question:
         # (1) What merchant did I spend the most on?
-        merchant = transactions['merchant'].mode()[0]
-        answer_coordinates = [(i, transactions.columns.get_loc('amount')) for i in range(len(transactions)) if transactions.iloc[i]['merchant'] == merchant]
+        amounts = transactions.groupby(['merchant']).amount.sum().reset_index()
+        merchant = amounts['merchant'][amounts['amount'].idxmax()]
+        answer_coordinates = [(i, transactions.columns.get_loc('merchant')) for i in range(len(transactions))]
         question = "What merchant did I spend the most on?"
         queries.append({
             "id": id,
             "question": question,
             "answer_coordinates": json.dumps(answer_coordinates),
             "answer_text": merchant,
-            "aggregation_labels": NONE
+            "aggregation_labels": ARGMAX_SUM
         })
+
+        # generate following questions:
+        # (1) What was my biggest transaction amount at (merchant)?
+        # (2) What was my smallest transaction amount at (merchant)?
+        for merchant in transactions['merchant'].unique():
+            i_max = transactions.loc[transactions['merchant'] == merchant]['amount'].idxmax()
+            i_min = transactions.loc[transactions['merchant'] == merchant]['amount'].idxmin()
+            question = f"What was my biggest transaction amount at {merchant}?"
+            answer_coordinates = [(int(i_max), transactions.columns.get_loc('amount'))]
+            answer_float = transactions.iloc[i_max]['amount']
+            queries.append({
+                "id": id,
+                "question": question,
+                "answer_coordinates": json.dumps(answer_coordinates),
+                "answer_text": str(answer_float),
+                "aggregation_labels": NONE
+            })
+
+            question = f"What was my smallest transaction amount at {merchant}?"
+            answer_coordinates = [(int(i_min), transactions.columns.get_loc('amount'))]
+            answer_float = transactions.iloc[i_min]['amount']
+            queries.append({
+                "id": id,
+                "question": question,
+                "answer_coordinates": json.dumps(answer_coordinates),
+                "answer_text": str(answer_float),
+                "aggregation_labels": NONE
+            })
+        
+        # generate following questions:
+        # (1) What was my biggest transaction amount in (category)?
+        # (2) What was my smallest transaction amount in (category)?
+        for category in CATEGORIES:
+            category_transactions = transactions.loc[transactions['category'] == category]['amount']
+            if len(category_transactions) == 0:
+                continue
+            i_max = category_transactions.idxmax()
+            i_min = category_transactions.idxmin()
+            question = f"What was my biggest transaction amount in {category}?"
+            answer_coordinates = [(int(i_max), transactions.columns.get_loc('amount'))]
+            answer_float = transactions.iloc[i_max]['amount']
+            queries.append({
+                "id": id,
+                "question": question,
+                "answer_coordinates": json.dumps(answer_coordinates),
+                "answer_text": str(answer_float),
+                "aggregation_labels": NONE
+            })
+
+            question = f"What was my smallest transaction amount in {category}?"
+            answer_coordinates = [(int(i_min), transactions.columns.get_loc('amount'))]
+            answer_float = transactions.iloc[i_min]['amount']
+            queries.append({
+                "id": id,
+                "question": question,
+                "answer_coordinates": json.dumps(answer_coordinates),
+                "answer_text": str(answer_float),
+                "aggregation_labels": NONE
+            })
     
     # write queries to save file
     with open(save_file if save_file else 'data.csv', 'w') as f:
@@ -279,5 +376,5 @@ if __name__ == "__main__":
         generate_transactions(**params)
     elif args.type == 'users':
         generate_users(**params)
-    elif args.type == 'questions':
+    elif args.type == 'queries':
         generate_queries(**params)
