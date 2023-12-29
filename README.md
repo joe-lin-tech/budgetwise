@@ -31,7 +31,7 @@ Login to a wandb account if you plan to run the training script and would like t
 wandb login
 ```
 
-Trained model checkpoints can be downloaded from [this drive](https://drive.google.com/drive/folders/1upZtIfHsucYy6cmJo2a8-6yT9dVD5Amt?usp=sharing).
+Trained model checkpoints can be downloaded from [this drive](https://drive.google.com/drive/folders/1upZtIfHsucYy6cmJo2a8-6yT9dVD5Amt?usp=sharing). Note that ```model.pt``` is the latest checkpoint trained with additional aggregation operators explained below and can handle spending pattern queries as described in the requirements document. ```model-count.pt```, as a reference, lacks these additional predictive capabilities, but are more performant on simple COUNT queries.
 
 Your local environment should now be suitable to run the scripts in this repository.
 
